@@ -1,0 +1,72 @@
+trigger:
+  branches:
+    include:
+    - master
+    - feature/*
+    - refs/tags/*
+
+jobs:
+
+  - job: "Build_laholio_package"
+
+    pool:
+      vmImage: 'ubuntu-latest'
+
+    steps:
+
+      - task: UsePythonVersion@0
+        displayName: Python - Configure
+        inputs:
+          versionSpec: "3.6"
+          architecture: "x64"
+
+      - checkout: self
+        persistCredentials: true
+
+      - script: |
+          git fetch --dry-run --verbose 2>&1 | grep "origin/master" | grep "up to date"
+        displayName: "Master sync"
+
+      - script: |
+          python -m pip install --upgrade pip poetry==1.0.0 
+          poetry config virtualenvs.create false
+          poetry config repositories.ICPyPI ${PRIVATE_REPO_URL}
+          poetry config http-basic.ICPyPI ICPyPI $(ICPyPI_password)
+        displayName: Python - Poetry setup
+
+      - script: |
+           poetry install
+        displayName: Install Package
+        
+
+      - task: DockerCompose@0
+        displayName: Activate Elasticsearch
+        inputs:
+          action: Run a Docker Compose command
+          azureSubscription: ${SUBSCRIPTION} 
+          azureContainerRegistry: ${REGISTER}
+          dockerComposeFile: "docker/development/docker-compose.yml"
+          dockerComposeFileArgs: |
+            ELASTIC_VERSION=6.8.0
+          qualifyImageNames: true
+          dockerComposeCommand: up -d elasticsearch
+
+      - script: |
+          bash docker/development/wait-for-elastic.sh
+        displayName: Wait for elastic
+
+      - script: |
+          python -m pytest -v --tb=short -ra --junitxml=test-results.xml --cov=laholio
+        displayName: Code Test
+        failOnStderr: true
+
+      - task: PublishTestResults@2
+        inputs:
+          testResultsFiles: "**/test-results.xml"
+          testRunTitle: "Python $(python.version)"
+          condition: succeededOrFailed()
+
+      - script: |
+          poetry publish --repository ICPyPI --username ${USERNAME} --${PASSWORD} --build
+        condition: startsWith(variables['Build.SourceBranch'], 'refs/tags/')
+        displayName: Build and Push - laholio (ICPyPI)

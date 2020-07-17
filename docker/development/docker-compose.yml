@@ -1,0 +1,51 @@
+version: '3.7'
+services:
+  elasticsearch:
+    container_name: elasticsearch
+    hostname: elasticsearch
+    image: "docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}"
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=127.0.0.1
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - MAX_LOCKED_MEMORY=unlimited
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    
+    volumes:
+      #- ./config/elasticsearch.yml:/usr/share/elasticsearch/elasticsearch.yml
+      - esdata:/usr/share/elasticsearch/data
+    expose: ['9200','9206']
+    ports: 
+      - "9206:9200"
+    healthcheck:
+      test: ["CMD", "curl","-s" ,"-f", "http://localhost:9200/_cat/health"]
+    networks: ['stack']
+
+  # TODO: usar yaml anchors para no repetir
+  laholio:
+    depends_on:
+      - elasticsearch
+    build: 
+      context: ../..
+      dockerfile: docker/development/Dockerfile
+      cache_from:
+        - iccorp.azurecr.io/dev-laholio:latest
+    image: iccorp.azurecr.io/dev-laholio:latest
+    environment:
+      - LAHOLIO_CONFIG=laholio.settings:Development
+      - LAHOLIO_ELASTICSEARCH_HOST=elasticsearch
+      - LAHOLIO_CATALOGO_INDEX_NAME=NombreDeMentira
+    entrypoint: ["bash", "./wait-for-elastic.sh"]
+    command: ["python", "-m", "pytest", ]
+    networks: ['stack']
+volumes:
+   esdata:
+    driver: local
+
+
+
+networks: {stack: {}}

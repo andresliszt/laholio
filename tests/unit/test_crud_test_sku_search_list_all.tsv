@@ -1,0 +1,3 @@
+from_	size	rut_proveedor_	includes	excludes	include_meta
+int	int	int	lambda x:list(str(x))	lambda x:list(str(x))	bool
+0	2	76350871	""	""	False
